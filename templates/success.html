@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful - Stripe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <a href="/" class="logo">Stripe POC</a>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/logout">Sign Out</a>
+            </nav>
+        </div>
+    </header>
+
+    <div class="container single">
+        <div class="card text-center">
+            <div class="success-icon">✓</div>
+            
+            <h1>Payment Successful!</h1>
+            <p class="subtitle">Your subscription has been processed successfully and is now active. Thank you for joining us!</p>
+
+            <div class="details-box">
+                <div class="detail-row">
+                    <span class="detail-label">Status</span>
+                    <span class="detail-value">Confirmed</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Subscription ID</span>
+                    <span class="detail-value" id="subscription-id">--</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Amount</span>
+                    <span class="detail-value" id="amount-value">--</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Date</span>
+                    <span class="detail-value" id="transaction-date">--</span>
+                </div>
+            </div>
+
+            <div class="info-section">
+                <h3>What's Next?</h3>
+                <p>Your subscription is now active. You'll receive a confirmation email shortly. You can access your account dashboard to manage your subscription settings and billing information.</p>
+            </div>
+
+            <div class="actions">
+                <a href="/" class="btn btn-secondary">Back to Home</a>
+                <a href="#" class="btn btn-primary">View Account</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get data from template
+        const sessionId = '{{ session_id }}';
+        const amount = '{{ amount }}';
+        const currency = '{{ currency }}';
+        
+        // Format today's date
+        const today = new Date();
+        const options = { year: 'numeric', month: 'long', day: 'numeric' };
+        document.getElementById('transaction-date').textContent = today.toLocaleDateString('en-US', options);
+        
+        // Display subscription ID if available
+        if (sessionId) {
+            document.getElementById('subscription-id').textContent = sessionId.substring(0, 20) + '...';
+        }
+        
+        // Display actual amount and currency
+        if (amount && currency) {
+            document.getElementById('amount-value').textContent = '$' + parseFloat(amount).toFixed(2) + ' ' + currency;
+        } else {
+            document.getElementById('amount-value').textContent = 'Processing...';
+        }
+    </script>
+</body>
+</html>

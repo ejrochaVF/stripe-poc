@@ -165,7 +165,8 @@
             
             try {
                 const productName = document.getElementById('product-name').value;
-                const amount = parseFloat(document.getElementById('amount').value) * 100; // Convert to cents
+                // Read amount as a decimal in major currency units (e.g. 12.34)
+                const amount = parseFloat(document.getElementById('amount').value);
                 const currency = document.getElementById('currency').value;
                 const recurring = document.getElementById('recurring').value;
                 
@@ -176,9 +177,20 @@
                     },
                     body: JSON.stringify({ email: userEmail, productName, amount, currency, recurring }),
                 });
-                
-                const { url } = await response.json();
-                window.location = url;
+
+                // Ensure the server returned a successful response and contains a URL
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`Server error (${response.status}): ${errText}`);
+                }
+
+                const payload = await response.json();
+                if (!payload || !payload.url) {
+                    throw new Error('No checkout URL returned from server');
+                }
+
+                // Redirect to Stripe Checkout
+                window.location.href = payload.url;
             } catch (error) {
                 console.error('Error creating checkout session:', error);
                 // Hide spinner, show text again, and re-enable button if there's an error

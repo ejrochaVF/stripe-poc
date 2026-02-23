@@ -4,6 +4,7 @@ import stripe
 import os
 from dotenv import load_dotenv
 from services.stripe_service import StripeService
+from services.models import BillingAddress, Currency, RecurringInterval
 
 load_dotenv()
 
@@ -90,15 +91,17 @@ def create_checkout_session():
     data = request.get_json()
 
     try:
+        raw_currency = data.get('currency', 'usd')
+        raw_interval = data.get('recurring')
         result = stripe_service.create_checkout_session(
             email=data.get('email'),
             product_name=data.get('productName', 'Default Product'),
             amount_raw=data.get('amount', 0),
-            currency=data.get('currency', 'usd'),
-            recurring_interval=data.get('recurring'),
+            currency=Currency(raw_currency),
+            recurring_interval=RecurringInterval(raw_interval) if raw_interval else None,
             success_url=request.host_url + 'success?session_id={CHECKOUT_SESSION_ID}',
             cancel_url=request.host_url,
-            billing=data.get('billing'),
+            billing=BillingAddress.from_dict(data.get('billing')) if data.get('billing') else None,
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400

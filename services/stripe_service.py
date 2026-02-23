@@ -9,6 +9,8 @@ modification.
 from datetime import datetime
 import stripe
 
+from .models import BillingAddress, Currency, RecurringInterval
+
 
 # Currencies without minor units (no cents). See Stripe docs for full list.
 ZERO_DECIMAL_CURRENCIES = {
@@ -75,7 +77,7 @@ class StripeService:
     # Customers                                                            #
     # ------------------------------------------------------------------ #
 
-    def get_or_create_customer(self, email: str, billing: dict = None) -> str | None:
+    def get_or_create_customer(self, email: str, billing: BillingAddress | None = None) -> str | None:
         """Return a Stripe customer ID for the given email.
 
         If a customer already exists the billing address is updated (when
@@ -83,14 +85,14 @@ class StripeService:
 
         Returns the customer ID, or None on failure.
         """
-        billing = billing or {}
+        billing_dict = billing.to_dict() if billing else {}
         address_payload = {
-            'line1': billing.get('line1'),
-            'line2': billing.get('line2'),
-            'city': billing.get('city'),
-            'state': billing.get('state'),
-            'postal_code': billing.get('postal_code'),
-            'country': billing.get('country'),
+            'line1': billing_dict.get('line1'),
+            'line2': billing_dict.get('line2'),
+            'city': billing_dict.get('city'),
+            'state': billing_dict.get('state'),
+            'postal_code': billing_dict.get('postal_code'),
+            'country': billing_dict.get('country'),
         } if billing else None
 
         try:
@@ -105,7 +107,7 @@ class StripeService:
                         stripe.Customer.modify(
                             customer_id,
                             address=address_payload,
-                            name=billing.get('name') or None,
+                            name=billing.name or None,
                         )
                     except Exception as exc:
                         print(f'[StripeService] Failed to update customer address: {exc}')
@@ -115,8 +117,8 @@ class StripeService:
             create_payload = {'email': email}
             if address_payload:
                 create_payload['address'] = address_payload
-            if billing.get('name'):
-                create_payload['name'] = billing['name']
+            if billing and billing.name:
+                create_payload['name'] = billing.name
 
             new_customer = stripe.Customer.create(**create_payload)
             return getattr(new_customer, 'id', None)
@@ -244,11 +246,11 @@ class StripeService:
         email: str,
         product_name: str,
         amount_raw,
-        currency: str,
-        recurring_interval: str | None,
+        currency: Currency | str,
+        recurring_interval: RecurringInterval | str | None,
         success_url: str,
         cancel_url: str,
-        billing: dict = None,
+        billing: BillingAddress | None = None,
     ) -> dict:
         """Create a Stripe Checkout Session and return {'url': ..., 'sessionId': ...}.
 

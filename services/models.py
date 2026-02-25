@@ -7,7 +7,7 @@ Stripe SDK (which expects plain strings) without calling .value.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -17,6 +17,9 @@ class RecurringInterval(str, Enum):
     WEEK  = 'week'
     MONTH = 'month'
     YEAR  = 'year'
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class Currency(str, Enum):
@@ -55,44 +58,6 @@ class Currency(str, Enum):
     VND = 'vnd'
     CLP = 'clp'
 
+    def __str__(self) -> str:
+        return self.value
 
-@dataclass
-class BillingAddress:
-    """Structured billing / shipping address passed to Stripe.
-
-    All fields are optional so callers can supply only what they have.
-    """
-    name: str | None = field(default=None)
-    line1: str | None = field(default=None)
-    line2: str | None = field(default=None)
-    city: str | None = field(default=None)
-    state: str | None = field(default=None)
-    postal_code: str | None = field(default=None)
-    country: str | None = field(default=None)
-
-    def to_dict(self) -> dict:
-        """Return a plain dict suitable for the Stripe API."""
-        return {
-            'name': self.name,
-            'line1': self.line1,
-            'line2': self.line2,
-            'city': self.city,
-            'state': self.state,
-            'postal_code': self.postal_code,
-            'country': self.country,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> 'BillingAddress':
-        """Build a BillingAddress from a raw request dict."""
-        if not data:
-            return cls()
-        return cls(
-            name=data.get('name'),
-            line1=data.get('line1'),
-            line2=data.get('line2'),
-            city=data.get('city'),
-            state=data.get('state'),
-            postal_code=data.get('postal_code'),
-            country=data.get('country'),
-        )

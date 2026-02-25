@@ -3,8 +3,11 @@ from functools import wraps
 import stripe
 import os
 from dotenv import load_dotenv
+from repositories.db import init_pool
+from repositories.user_repository import UserRepository
 from services.stripe_service import StripeService
-from services.models import BillingAddress, Currency, RecurringInterval
+from services.auth_service import AuthService
+from services.models import Currency, RecurringInterval
 
 load_dotenv()
 
@@ -16,6 +19,15 @@ stripe_service = StripeService(
     publishable_key=os.getenv('STRIPE_PUBLISHABLE_KEY'),
     webhook_secret=os.getenv('STRIPE_WEBHOOK_SECRET'),
 )
+
+# ------------------------------------------------------------------ #
+# Database & Auth                                                      #
+# ------------------------------------------------------------------ #
+
+init_pool()  # reads DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME from .env
+
+user_repository = UserRepository()
+auth_service = AuthService(user_repository)
 
 
 
@@ -77,12 +89,39 @@ def login():
     email = data.get('email')
     password = data.get('password')
 
-    # TODO: Replace with real authentication logic
-    if email and password:
-        session['user_email'] = email
+    result = auth_service.login(email, password)
+
+    if result.success:
+        session['user_email'] = result.user.email
         return jsonify({'success': True, 'redirect': '/'}), 200
 
-    return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+    return jsonify({'success': False, 'message': result.message}), 401
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'GET':
+        return render_template('register.html')
+
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    result = auth_service.register(email, password)
+
+    if result.success:
+        session['user_email'] = result.user.email
+        return jsonify({'success': True, 'redirect': '/'}), 201
+
+    status = 409 if result.error and result.error == 'email_already_exists' else 400
+    return jsonify({'success': False, 'message': result.message}), status
+
+
+@app.route('/update-address', methods=['PUT'])
+@login_required
+def update_address():
+    """Removed: billing address is no longer stored in the application."""
+    return jsonify({'success': False, 'message': 'Not supported.'}), 410
 
 
 @app.route('/create-checkout-session', methods=['POST'])
@@ -93,6 +132,7 @@ def create_checkout_session():
     try:
         raw_currency = data.get('currency', 'usd')
         raw_interval = data.get('recurring')
+
         result = stripe_service.create_checkout_session(
             email=data.get('email'),
             product_name=data.get('productName', 'Default Product'),
@@ -101,7 +141,6 @@ def create_checkout_session():
             recurring_interval=RecurringInterval(raw_interval) if raw_interval else None,
             success_url=request.host_url + 'success?session_id={CHECKOUT_SESSION_ID}',
             cancel_url=request.host_url,
-            billing=BillingAddress.from_dict(data.get('billing')) if data.get('billing') else None,
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
@@ -148,6 +187,7 @@ def stripe_webhook():
         return 'Invalid signature', 400
 
     stripe_service.handle_webhook_event(event)
+
     return jsonify(success=True)
 
 

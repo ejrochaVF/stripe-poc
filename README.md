@@ -9,10 +9,17 @@ in any project type — Flask MVC, FastAPI WebAPI, Django, etc.
 ## Project Structure
 
 ```
-app.py                      # Flask routes only — delegates to StripeService
+app.py                      # Flask routes only — delegates to services
+repositories/
+    db.py                   # MySQL connection pool (framework-agnostic)
+    user_repository.py      # Data-access layer for the users table
 services/
+    auth_service.py         # Authentication logic (bcrypt hashing, login, register)
     models.py               # Domain enums & dataclasses (Currency, RecurringInterval, BillingAddress)
     stripe_service.py       # All Stripe API communication (framework-agnostic)
+migrations/
+    001_create_users_table.sql
+seed_user.py                # CLI helper to create a test user
 templates/
     login.html
     index.html
@@ -49,11 +56,40 @@ STRIPE_PUBLISHABLE_KEY=pk_test_...
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 SECRET_KEY=your-flask-session-secret
+
+# MySQL
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your-db-password
+DB_NAME=stripepoc
 ```
 
 > `STRIPE_WEBHOOK_SECRET` is provided by the Stripe CLI after running `stripe listen` (see below).
 
-### 3. Run the Flask app
+### 3. Create the database
+
+Run the migration script against your MySQL server:
+
+```bash
+mysql -u root -p < migrations/001_create_users_table.sql
+```
+
+For existing databases, apply incremental migrations:
+
+```bash
+mysql -u root -p < migrations/002_add_address_to_users.sql
+```
+
+### 4. Seed a test user (optional)
+
+```bash
+python seed_user.py
+```
+
+You will be prompted for an email and password (min 8 characters). The password is stored as a bcrypt hash.
+
+### 5. Run the Flask app
 
 ```bash
 python app.py
@@ -111,7 +147,9 @@ Copy that value into your `.env` file as `STRIPE_WEBHOOK_SECRET`, then restart t
 | Method | Route | Description |
 |---|---|---|
 | `GET` | `/` | Dashboard — lists active subscriptions for logged-in user |
-| `GET/POST` | `/login` | Login page / authenticate |
+| `GET/POST` | `/login` | Login page / authenticate (bcrypt-verified) |
+| `POST` | `/register` | Create a new user account (optionally with billing address) |
+| `PUT` | `/update-address` | Update billing address for logged-in user |
 | `GET` | `/logout` | Clear session and redirect to login |
 | `POST` | `/create-checkout-session` | Create a Stripe Checkout session (one-time or subscription) |
 | `GET` | `/success` | Post-payment success page |
@@ -142,6 +180,30 @@ Copy that value into your `.env` file as `STRIPE_WEBHOOK_SECRET`, then restart t
 - Omit `"recurring"` for a one-time payment.
 - Supported `recurring` values: `"day"`, `"week"`, `"month"`, `"year"` — backed by the `RecurringInterval` enum.
 - Supported `currency` values are defined by the `Currency` enum (e.g. `"usd"`, `"eur"`, `"gbp"`). An unrecognised value returns HTTP 400.
+
+---
+
+## Authentication Architecture
+
+The login system follows a **Repository → Service → Route** layered pattern:
+
+```
+app.py (routes)  →  AuthService  →  UserRepository  →  MySQL
+```
+
+| Layer | File | Responsibility |
+|---|---|---|
+| **Repository** | `repositories/user_repository.py` | Raw SQL against the `users` table (parameterised queries) |
+| **Service** | `services/auth_service.py` | Password hashing (bcrypt, cost 12), credential verification, registration validation |
+| **Route** | `app.py` | HTTP-specific concerns (session, JSON responses) |
+
+### Security best practices applied
+
+- **bcrypt** with adaptive cost factor 12 (resistant to brute-force & rainbow tables)
+- Constant-time comparison on login — a dummy bcrypt check runs even when the email is not found (timing-attack mitigation)
+- Password minimum length enforced (8 characters)
+- Unique constraint on `email` at the database level
+- Parameterised queries throughout (no SQL injection)
 
 ---
 

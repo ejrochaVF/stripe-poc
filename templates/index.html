@@ -83,6 +83,25 @@
                 <li>
                     <strong>{{ sub.product_name or 'Subscription' }}</strong> — {{ sub.status }}{% if sub.amount is not none %} — {{ sub.amount }} {{ sub.currency|upper }}{% endif %} {% if sub.interval %}({{ sub.interval }}){% endif %}<br>
                     ID: {{ sub.id }}{% if sub.current_period_end %} — Expires: {{ sub.current_period_end }}{% endif %}
+                    
+                    {% if sub.can_cancel %}
+                        <button class="btn btn-danger cancel-subscription-btn" data-sub-id="{{ sub.id }}">Cancel</button>
+                    {% endif %}
+                    {% if sub.invoices %}
+                        <div class="invoice-list">
+                            <strong>Invoices:</strong>
+                            <ul>
+                            {% for inv in sub.invoices %}
+                                <li>
+                                    {{ inv.id }} — {{ inv.status }} — {{ inv.amount_paid / 100 }} {{ inv.currency|upper }}
+                                    {% if inv.pdf_url %}
+                                        <a href="{{ url_for('download_invoice', invoice_id=inv.id) }}" target="_blank" class="btn btn-secondary">Download PDF</a>
+                                    {% endif %}
+                                </li>
+                            {% endfor %}
+                            </ul>
+                        </div>
+                    {% endif %}
                 </li>
                 {% endfor %}
             </ul>
@@ -94,6 +113,39 @@
 
 
     <script>
+                // Cancel subscription handler
+                document.addEventListener('DOMContentLoaded', function() {
+                    document.querySelectorAll('.cancel-subscription-btn').forEach(function(btn) {
+                        btn.addEventListener('click', async function(e) {
+                            const subId = btn.getAttribute('data-sub-id');
+                            if (!subId) return;
+                            if (!confirm('Are you sure you want to cancel this subscription?')) return;
+                            btn.disabled = true;
+                            btn.textContent = 'Cancelling...';
+                            try {
+                                const resp = await fetch('/cancel-subscription', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ subscription_id: subId })
+                                });
+                                const result = await resp.json();
+                                if (result.success) {
+                                    btn.textContent = 'Cancelled';
+                                    btn.classList.add('cancelled');
+                                    setTimeout(() => window.location.reload(), 1200);
+                                } else {
+                                    btn.textContent = 'Error';
+                                    btn.disabled = false;
+                                    alert(result.message || 'Failed to cancel subscription.');
+                                }
+                            } catch (err) {
+                                btn.textContent = 'Error';
+                                btn.disabled = false;
+                                alert('Network error.');
+                            }
+                        });
+                    });
+                });
         const userEmail = '{{ user_email }}';
         const currencySelect = document.getElementById('currency');
         

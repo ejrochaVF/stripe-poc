@@ -21,7 +21,6 @@ ZERO_DECIMAL_CURRENCIES = {
 
 class StripeService:
     """Handles all communication with the Stripe API.
-
     Usage:
         service = StripeService(
             secret_key="sk_test_...",
@@ -29,11 +28,29 @@ class StripeService:
             webhook_secret="whsec_...",
         )
     """
-
     def __init__(self, secret_key: str, publishable_key: str, webhook_secret: str = None):
         self.publishable_key = publishable_key
         self.webhook_secret = webhook_secret
         stripe.api_key = secret_key
+
+    def get_invoice_pdf_url(self, invoice_id: str) -> str | None:
+        """Return the hosted invoice PDF URL for a given invoice ID."""
+        try:
+            invoice = stripe.Invoice.retrieve(invoice_id)
+            return invoice.invoice_pdf if hasattr(invoice, 'invoice_pdf') else invoice.get('invoice_pdf')
+        except Exception as exc:
+            print(f'[StripeService] Error retrieving invoice PDF for {invoice_id}: {exc}')
+            return None
+
+    def cancel_subscription(self, subscription_id: str) -> dict | None:
+        """Cancel a Stripe subscription by its ID."""
+        try:
+            canceled = stripe.Subscription.delete(subscription_id)
+            print(f'[StripeService] Subscription canceled: {canceled.id}')
+            return canceled.to_dict() if hasattr(canceled, 'to_dict') else dict(canceled)
+        except Exception as exc:
+            print(f'[StripeService] Error canceling subscription {subscription_id}: {exc}')
+            return None
 
     # ------------------------------------------------------------------ #
     # Utility helpers                                                      #
@@ -111,6 +128,8 @@ class StripeService:
             return subscriptions, queried_customer_ids
 
         customers = stripe.Customer.list(email=user_email, limit=100)
+        # customers = stripe.Customer.list(email=user_email, test_clock='clock_1T6a7YFQa34ZXDyiUME83ULN', limit=100)
+        print(f"[DEBUG] Stripe customers for email '{user_email}': {customers}")
         customers_list = self._extract_list_data(customers)
         queried_customer_ids = [getattr(c, 'id', None) for c in customers_list]
 
@@ -194,14 +213,32 @@ class StripeService:
                     pass
 
         period_end = getattr(s, 'current_period_end', None)
+        # Get invoices for this subscription
+        invoices = []
+        sub_id = getattr(s, 'id', None)
+        if sub_id:
+            try:
+                invoice_objs = stripe.Invoice.list(subscription=sub_id, limit=10)
+                for inv in self._extract_list_data(invoice_objs):
+                    invoices.append({
+                        'id': inv.id,
+                        'status': inv.status,
+                        'amount_paid': getattr(inv, 'amount_paid', None),
+                        'currency': getattr(inv, 'currency', None),
+                        'pdf_url': getattr(inv, 'invoice_pdf', None)
+                    })
+            except Exception as exc:
+                print(f'[StripeService] Error fetching invoices for subscription {sub_id}: {exc}')
         return {
-            'id': getattr(s, 'id', None),
+            'id': sub_id,
             'status': getattr(s, 'status', None),
             'current_period_end': datetime.fromtimestamp(period_end).isoformat() if period_end else None,
             'product_name': product_name,
             'amount': (price_obj.get('unit_amount') / 100) if price_obj and price_obj.get('unit_amount') else None,
             'currency': price_obj.get('currency') if price_obj else None,
             'interval': price_obj.get('recurring', {}).get('interval') if price_obj else None,
+            'can_cancel': getattr(s, 'status', None) in ['active', 'trialing'],
+            'invoices': invoices
         }
 
     # ------------------------------------------------------------------ #
@@ -301,7 +338,7 @@ class StripeService:
         return stripe.Webhook.construct_event(payload, sig_header, self.webhook_secret)
 
     # ------------------------------------------------------------------ #
-    # Webhook event handlers                                               #
+    # Webhook event handlers                                             #
     # ------------------------------------------------------------------ #
 
     def handle_webhook_event(self, event) -> bool:

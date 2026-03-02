@@ -57,6 +57,8 @@ def index():
     ids = [s.get('id') if isinstance(s, dict) else None for s in subscriptions]
     print(f'Queried customer IDs for {user_email}: {queried_customer_ids}')
     print(f'Fetched {len(subscriptions)} subscriptions for {user_email}: {ids}')
+    for sub in subscriptions:
+        print(f"Subscription {sub.get('id')}: status={sub.get('status')}")
 
     return render_template(
         'index.html',
@@ -65,6 +67,13 @@ def index():
         subscriptions=subscriptions,
     )
 
+@app.route('/download-invoice/<invoice_id>')
+@login_required
+def download_invoice(invoice_id):
+    url = stripe_service.get_invoice_pdf_url(invoice_id)
+    if url:
+        return redirect(url)
+    return 'Invoice not found or unavailable.', 404
 
 @app.route('/api/subscriptions')
 @login_required
@@ -190,6 +199,17 @@ def stripe_webhook():
 
     return jsonify(success=True)
 
+@app.route('/cancel-subscription', methods=['POST'])
+@login_required
+def cancel_subscription():
+    data = request.get_json()
+    sub_id = data.get('subscription_id')
+    if not sub_id:
+        return jsonify({'success': False, 'message': 'No subscription ID provided.'}), 400
+    result = stripe_service.cancel_subscription(sub_id)
+    if result and result.get('status') == 'canceled':
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Failed to cancel subscription.'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=9001)
